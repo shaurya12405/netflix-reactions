@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Fake streaming player (test fixture)</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family: sans-serif; }
+      #appMountPoint { height: 100%; }
+      .watch-video { position: relative; width: 100%; height: 100%; }
+      [data-uia="player"] { position: absolute; inset: 0; }
+      video { width: 100%; height: 100%; object-fit: contain; background: #111; }
+      /* Hostile page CSS that would break an un-isolated UI. */
+      * { font-family: serif !important; }
+      input { display: none; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Test fixture that imitates the parts of a streaming SPA the adapter relies
+      on: /browse -> /watch/<id> via pushState, a player wrapper that goes
+      fullscreen, and the <video> being replaced on episode change. It also
+      installs HOSTILE keyboard listeners in the capture phase on window and
+      document, the worst case for keeping keystrokes away from the page.
+    -->
+    <button id="fs" style="position: fixed; bottom: 4px; left: 4px; z-index: 1">Fullscreen</button>
+    <div id="appMountPoint"><a id="open" href="#">Open title</a></div>
+    <script>
+      window.__events = [];
+      const toggle = (why) => {
+        const v = document.querySelector('video');
+        if (!v) return;
+        window.__events.push(why);
+        v.paused ? v.play() : v.pause();
+      };
+      // Capture-phase listeners registered by the page (worst case).
+      window.addEventListener('keydown', (e) => {
+        if (e.key === ' ') { e.preventDefault(); toggle('window-capture-space'); }
+      }, true);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'f') toggle('document-capture-f');
+      }, true);
+      // Bubble-phase click-to-pause on the player, like most players.
+      document.addEventListener('click', (e) => {
+        if (e.target.closest && e.target.closest('[data-uia="player"]')) toggle('player-click');
+      });
+
+      // Served as a blob URL so it is seekable (the test route has no Range support).
+      const videoUrl = fetch('/__fixture/test.webm').then((r) => r.blob()).then((b) => URL.createObjectURL(b));
+      function renderPlayer() {
+        const root = document.getElementById('appMountPoint');
+        root.innerHTML =
+          '<div class="watch-video" data-uia="watch-video">' +
+          '<div data-uia="player"><video muted playsinline></video></div>' +
+          '</div>';
+        const v = root.querySelector('video');
+        videoUrl.then((url) => { v.src = url; return v.play(); }).catch(() => {});
+      }
+      window.__openTitle = (id) => { history.pushState({}, '', '/watch/' + id); renderPlayer(); };
+      // Next episode: URL changes and the <video> element is replaced.
+      window.__nextEpisode = (id) => { history.pushState({}, '', '/watch/' + id); renderPlayer(); };
+      // requestFullscreen needs a user gesture, so the test clicks this button.
+      document.getElementById('fs').addEventListener('click', () =>
+        document.querySelector('.watch-video').requestFullscreen(),
+      );
+
+      document.getElementById('open').addEventListener('click', (e) => {
+        e.preventDefault();
+        window.__openTitle('80000001');
+      });
+      if (location.pathname.startsWith('/watch/')) renderPlayer();
+    </script>
+  </body>
+</html>

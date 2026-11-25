@@ -1,0 +1,126 @@
+/* Everything here is scoped to our shadow root. */
+:host {
+  all: initial;
+}
+
+.st-root {
+  --st-bg: rgba(20, 20, 24, 0.86);
+  --st-fg: #f2f2f4;
+  --st-muted: #a6a6b0;
+  --st-accent: #7c9cff;
+  --st-ok: #6bd49a;
+  --st-fail: #ff8a80;
+  --st-border: rgba(255, 255, 255, 0.12);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font: 13px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--st-fg);
+}
+
+/*
+ * Placement: top-right column. Stays clear of the centre of the frame and of
+ * the bottom ~30% where subtitles and the player controls sit.
+ */
+.st-panel {
+  pointer-events: auto;
+  position: absolute;
+  top: 80px;
+  right: 16px;
+  bottom: 30%;
+  width: min(300px, 24vw);
+  min-width: 220px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 12px;
+  background: var(--st-bg);
+  border: 1px solid var(--st-border);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+}
+
+.st-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.st-badge {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--st-accent);
+  color: #0b0b10;
+}
+
+.st-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 10px;
+  margin: 0 0 8px;
+}
+.st-grid dt {
+  color: var(--st-muted);
+}
+.st-grid dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.st-ranges,
+.st-list {
+  margin: 0 0 8px;
+  padding-left: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.st-label {
+  display: block;
+  margin: 6px 0 4px;
+  color: var(--st-muted);
+  font-size: 12px;
+}
+.st-muted {
+  color: var(--st-muted);
+  font-size: 12px;
+  margin: 4px 0;
+}
+.st-ok {
+  color: var(--st-ok);
+}
+.st-fail {
+  color: var(--st-fail);
+}
+
+.st-input {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  color: var(--st-fg);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--st-border);
+  border-radius: 8px;
+}
+.st-input:focus {
+  outline: 2px solid var(--st-accent);
+  outline-offset: 1px;
+}
+
+.st-button {
+  margin-top: 8px;
+  padding: 6px 10px;
+  font: inherit;
+  color: #0b0b10;
+  background: var(--st-accent);
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.st-button:focus-visible {
+  outline: 2px solid var(--st-fg);
+  outline-offset: 2px;
+}
