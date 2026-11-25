@@ -108,4 +108,10 @@ describe('post-comment handler', () => {
     expect((await handler(post(body))).status).toBe(status);
     expect(log).toHaveBeenCalledTimes(status === 500 ? 1 : 0);
   });
+
+  it('includes the database error code in a 500 so setup problems are diagnosable', async () => {
+    const { handler } = setup({ insertComment: async () => ({ ok: false, code: '42501', message: 'permission denied for table comments' }) });
+    const res = await handler(post(body));
+    expect((await res.json()).error).toMatch(/server error 42501/);
+  });
 });

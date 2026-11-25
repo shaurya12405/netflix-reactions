@@ -68,7 +68,10 @@ function mapInsertError(code: string | null, message: string): Response {
     case 'ST404':
       return fail(404, 'The comment you replied to no longer exists.');
     default:
-      return fail(500, 'Could not save your comment. Please try again.');
+      // The code (a Postgres/PostgREST error code, never data) makes setup
+      // problems diagnosable from the client, e.g. 42P01 missing table,
+      // 42501 missing privilege.
+      return fail(500, `Could not save your comment (server error ${code ?? 'unknown'}). Please try again.`);
   }
 }
 
