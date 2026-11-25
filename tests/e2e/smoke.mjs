@@ -167,9 +167,15 @@ try {
     assert.deepEqual(keys, ['watched:netflix:80000001', 'watched:netflix:80000002']);
     assert.equal(stored['watched:netflix:80000001'].ranges.length, 2);
   });
+  await step('popup talks to the background (unconfigured build shows setup hint)', async () => {
+    const popup = await context.newPage();
+    await popup.goto('chrome-extension://ogpidfiegoigmchlfmmdempbapjlbcnp/popup.html');
+    await popup.getByText('This build has no Supabase settings').waitFor({ timeout: 5000 });
+    await popup.close();
+  });
 } finally {
   console.log(results.join('\n'));
   await context.close();
   rmSync(userDataDir, { recursive: true, force: true });
 }
-console.log('\nM1 smoke test passed.');
+console.log('\nSmoke test passed.');
