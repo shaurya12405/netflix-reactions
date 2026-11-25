@@ -16,6 +16,8 @@ const GECKO_ID = '{ea318a04-d767-4b2f-8618-1080682a8576}';
 
 export default defineConfig({
   srcDir: 'src',
+  // The e2e test builds into its own folder so it never overwrites your build.
+  outDir: process.env.SCENE_TALK_OUTDIR || '.output',
   // Explicit imports everywhere: easier to read and review than auto-imports.
   imports: false,
   // Build MV3 for both browsers (WXT defaults Firefox to MV2).
@@ -37,10 +39,10 @@ export default defineConfig({
               id: GECKO_ID,
               strict_min_version: '140.0',
               // Required by AMO for new add-ons. Google sign-in sends the
-              // account identity to Supabase. Revisit in M3 (comments send
-              // the title ID and timestamp being watched).
+              // account identity to Supabase; loading and posting comments
+              // sends the title ID and playback position being watched.
               data_collection_permissions: {
-                required: ['authenticationInfo', 'personallyIdentifyingInfo'],
+                required: ['authenticationInfo', 'personallyIdentifyingInfo', 'websiteActivity'],
               },
             },
           },

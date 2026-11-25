@@ -23,6 +23,8 @@
       document, the worst case for keeping keystrokes away from the page.
     -->
     <button id="fs" style="position: fixed; bottom: 4px; left: 4px; z-index: 1">Fullscreen</button>
+    <!-- A page text field outside the player: typing "c" here must not open the composer. -->
+    <textarea id="page-input" style="position: fixed; bottom: 40px; left: 4px; width: 120px; height: 24px; z-index: 1"></textarea>
     <div id="appMountPoint"><a id="open" href="#">Open title</a></div>
     <script>
       window.__events = [];

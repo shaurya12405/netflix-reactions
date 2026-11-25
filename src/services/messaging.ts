@@ -5,17 +5,17 @@
  */
 import { browser } from 'wxt/browser';
 import type { ActionResult, AuthState } from '../background/auth';
-import type { ConnectivityReport } from './connectivity';
+import type { PostCommentRequest, PostCommentResponse } from '../background/comments';
 
 type Failure = { error: string };
 
 export interface MessageMap {
-  'probe-connectivity': { request: void; response: ConnectivityReport | Failure };
   'auth:get-state': { request: void; response: AuthState | Failure };
   'auth:sign-in': { request: void; response: ActionResult };
   'auth:sign-out': { request: void; response: ActionResult };
   'auth:set-display-name': { request: { displayName: string }; response: ActionResult };
   'auth:get-redirect-url': { request: void; response: string };
+  'comments:post': { request: PostCommentRequest; response: PostCommentResponse };
 }
 
 export type MessageType = keyof MessageMap;

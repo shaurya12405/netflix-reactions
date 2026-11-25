@@ -36,6 +36,9 @@ $$;
 grant usage on schema auth to anon, authenticated, service_role;
 grant execute on all functions in schema auth to anon, authenticated, service_role;
 
+-- Supabase creates this publication for Realtime.
+create publication supabase_realtime;
+
 create schema extensions;
 create extension pgtap with schema extensions;
 grant usage on schema extensions to anon, authenticated, service_role;

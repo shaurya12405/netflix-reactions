@@ -110,20 +110,31 @@ export function stepTracker(state: TrackerState, sample: PlaybackSample): Tracke
     case 'seeked':
       return { ranges: state.ranges, lastTime: isValidNumber(sample.time) ? sample.time : null };
     case 'tick': {
-      const { time, paused, seeking } = sample;
+      const { time, seeking } = sample;
       if (!isValidNumber(time) || time < 0 || seeking) {
         return state.lastTime === null ? state : { ranges: state.ranges, lastTime: null };
       }
-      const prev = state.lastTime;
-      if (!paused && prev !== null) {
-        const delta = time - prev;
-        if (delta > 0 && delta <= MAX_CONTINUOUS_STEP) {
-          return { ranges: addRange(state.ranges, prev, time), lastTime: time };
-        }
-      }
+      const step = continuousStep(state.lastTime, sample);
+      if (step) return { ranges: addRange(state.ranges, step[0], step[1]), lastTime: time };
       // Paused, first sample, backwards jump, or a forward jump that looks like
       // a seek: re-anchor without recording anything.
       return { ranges: state.ranges, lastTime: time };
     }
   }
+}
+
+/**
+ * The media-time segment [from, to] covered by continuous playback between
+ * the previous sample and this one, or null (paused, seeking, first sample,
+ * backwards or too-large jump). Used both for watched ranges and for
+ * revealing comments "as playback reaches them".
+ */
+export function continuousStep(
+  prevTime: number | null,
+  sample: PlaybackSample,
+): readonly [from: number, to: number] | null {
+  if (sample.kind !== 'tick' || sample.paused || sample.seeking || prevTime === null) return null;
+  if (!isValidNumber(sample.time) || sample.time < 0) return null;
+  const delta = sample.time - prevTime;
+  return delta > 0 && delta <= MAX_CONTINUOUS_STEP ? [prevTime, sample.time] : null;
 }

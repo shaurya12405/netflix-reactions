@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_CONTINUOUS_STEP,
   addRange,
+  continuousStep,
   createTracker,
   isWatched,
   normalizeRanges,
@@ -171,5 +172,20 @@ describe('stepTracker', () => {
   it('works at 2x playback speed with 250 ms timeupdates', () => {
     const s = run(play(0, 30, 0.5));
     expect(s.ranges).toEqual([[0, 30]]);
+  });
+});
+
+describe('continuousStep', () => {
+  it('returns the segment for a small forward step while playing', () => {
+    expect(continuousStep(10, tick(10.5))).toEqual([10, 10.5]);
+  });
+
+  it('is null when paused, seeking, first sample, backwards or a jump', () => {
+    expect(continuousStep(10, tick(10.5, { paused: true }))).toBeNull();
+    expect(continuousStep(10, tick(10.5, { seeking: true }))).toBeNull();
+    expect(continuousStep(null, tick(10.5))).toBeNull();
+    expect(continuousStep(10, tick(9))).toBeNull();
+    expect(continuousStep(10, tick(10 + MAX_CONTINUOUS_STEP + 0.1))).toBeNull();
+    expect(continuousStep(10, { kind: 'seeked', time: 11 })).toBeNull();
   });
 });
