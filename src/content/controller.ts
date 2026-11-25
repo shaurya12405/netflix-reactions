@@ -203,10 +203,7 @@ export function startController(win: Window, adapter: PlatformAdapter, options: 
       .then((stored) => {
         if (token !== loadToken || stored.length === 0) return;
         // Merge with anything recorded while storage was loading.
-        tracker = {
-          ranges: normalizeRanges([...stored, ...tracker.ranges]),
-          lastTime: tracker.lastTime,
-        };
+        tracker = { ...tracker, ranges: normalizeRanges([...stored, ...tracker.ranges]) };
         state.watchedRanges.value = tracker.ranges;
         sync.ensure(tracker.ranges, state.currentTime.value);
       })

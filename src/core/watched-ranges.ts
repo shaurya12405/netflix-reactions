@@ -3,6 +3,11 @@
  * through. Spoiler gating is built on this, not on a single "furthest" number,
  * so skipping ahead never unlocks the skipped part.
  *
+ * One allowance: a short forward hop (up to MAX_BRIDGED_HOP seconds, e.g. the
+ * 10-second skip button) counts as watched, but only after at least
+ * MIN_PLAY_BEFORE_HOP seconds of real playback since the previous hop, so
+ * tapping skip repeatedly cannot unlock a long stretch.
+ *
  * Everything here is pure and immutable: functions return new arrays.
  */
 
@@ -20,6 +25,12 @@ export const MERGE_EPSILON = 0.25;
  * Measured on currentTime deltas, never wall-clock time.
  */
 export const MAX_CONTINUOUS_STEP = 2;
+
+/** Longest forward hop (seconds) that still counts as watched. */
+export const MAX_BRIDGED_HOP = 10;
+
+/** Seconds of real playback needed since the previous bridged hop. */
+export const MIN_PLAY_BEFORE_HOP = 5;
 
 const isValidNumber = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 
@@ -84,8 +95,12 @@ export function totalWatched(ranges: WatchedRanges): number {
 
 export interface TrackerState {
   readonly ranges: WatchedRanges;
-  /** currentTime of the previous continuous sample, or null after a seek/reset. */
+  /** currentTime of the previous sample, or null after a seek/reset. */
   readonly lastTime: number | null;
+  /** Position when the current seek started (to judge a short hop), or null. */
+  readonly seekFrom: number | null;
+  /** Seconds of continuous playback since the last bridged hop (or start). */
+  readonly playedSinceHop: number;
 }
 
 export type PlaybackSample =
@@ -99,26 +114,57 @@ export type PlaybackSample =
   | { readonly kind: 'reset' };
 
 export function createTracker(ranges: WatchedRanges = []): TrackerState {
-  return { ranges, lastTime: null };
+  return { ranges, lastTime: null, seekFrom: null, playedSinceHop: 0 };
+}
+
+/** True if a forward jump from `from` to `to` may count as watched. */
+function canBridge(state: TrackerState, from: number | null, to: number): from is number {
+  if (from === null) return false;
+  const hop = to - from;
+  return hop > 0 && hop <= MAX_BRIDGED_HOP && state.playedSinceHop >= MIN_PLAY_BEFORE_HOP;
 }
 
 export function stepTracker(state: TrackerState, sample: PlaybackSample): TrackerState {
   switch (sample.kind) {
     case 'reset':
+      return state.lastTime === null && state.seekFrom === null && state.playedSinceHop === 0
+        ? state
+        : { ...state, lastTime: null, seekFrom: null, playedSinceHop: 0 };
+
     case 'seeking':
-      return state.lastTime === null ? state : { ranges: state.ranges, lastTime: null };
-    case 'seeked':
-      return { ranges: state.ranges, lastTime: isValidNumber(sample.time) ? sample.time : null };
+      // Keep the original start if several seeking events fire during one scrub.
+      if (state.lastTime === null) return state;
+      return { ...state, lastTime: null, seekFrom: state.seekFrom ?? state.lastTime };
+
+    case 'seeked': {
+      const time = isValidNumber(sample.time) ? sample.time : null;
+      if (time !== null && canBridge(state, state.seekFrom, time)) {
+        return { ranges: addRange(state.ranges, state.seekFrom, time), lastTime: time, seekFrom: null, playedSinceHop: 0 };
+      }
+      return { ...state, lastTime: time, seekFrom: null };
+    }
+
     case 'tick': {
-      const { time, seeking } = sample;
+      const { time, seeking, paused } = sample;
       if (!isValidNumber(time) || time < 0 || seeking) {
-        return state.lastTime === null ? state : { ranges: state.ranges, lastTime: null };
+        return state.lastTime === null ? state : { ...state, lastTime: null, seekFrom: state.seekFrom ?? state.lastTime };
       }
       const step = continuousStep(state.lastTime, sample);
-      if (step) return { ranges: addRange(state.ranges, step[0], step[1]), lastTime: time };
-      // Paused, first sample, backwards jump, or a forward jump that looks like
-      // a seek: re-anchor without recording anything.
-      return { ranges: state.ranges, lastTime: time };
+      if (step) {
+        return {
+          ranges: addRange(state.ranges, step[0], step[1]),
+          lastTime: time,
+          seekFrom: null,
+          playedSinceHop: state.playedSinceHop + (step[1] - step[0]),
+        };
+      }
+      // A short forward jump seen without seek events (some players skip that way).
+      if (!paused && canBridge(state, state.lastTime, time)) {
+        return { ranges: addRange(state.ranges, state.lastTime, time), lastTime: time, seekFrom: null, playedSinceHop: 0 };
+      }
+      // Paused, first sample, backwards jump, or a forward jump that is too
+      // long (or too soon after the last hop): re-anchor without recording.
+      return { ...state, lastTime: time, seekFrom: null };
     }
   }
 }

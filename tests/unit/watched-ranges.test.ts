@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_BRIDGED_HOP,
   MAX_CONTINUOUS_STEP,
+  MIN_PLAY_BEFORE_HOP,
   addRange,
   continuousStep,
   createTracker,
@@ -187,5 +189,72 @@ describe('continuousStep', () => {
     expect(continuousStep(10, tick(9))).toBeNull();
     expect(continuousStep(10, tick(10 + MAX_CONTINUOUS_STEP + 0.1))).toBeNull();
     expect(continuousStep(10, { kind: 'seeked', time: 11 })).toBeNull();
+  });
+});
+
+describe('short hops (skip button)', () => {
+  const seekTo = (t: number): PlaybackSample[] => [{ kind: 'seeking' }, { kind: 'seeked', time: t }];
+
+  it(`a hop of up to ${MAX_BRIDGED_HOP} s counts as watched after ${MIN_PLAY_BEFORE_HOP} s of playback`, () => {
+    const s = run([...play(0, 20, 1), ...seekTo(30), ...play(30, 35, 1)]);
+    expect(s.ranges).toEqual([[0, 35]]);
+    expect(isWatched(s.ranges, 25)).toBe(true);
+  });
+
+  it('a hop longer than the limit is still a skip', () => {
+    const s = run([...play(0, 20, 1), ...seekTo(20 + MAX_BRIDGED_HOP + 1), ...play(31, 33, 1)]);
+    expect(s.ranges).toEqual([
+      [0, 20],
+      [31, 33],
+    ]);
+  });
+
+  it('tapping skip repeatedly only unlocks the first hop', () => {
+    const s = run([...play(0, 20, 1), ...seekTo(30), ...seekTo(40), ...seekTo(50), ...play(50, 52, 1)]);
+    expect(s.ranges).toEqual([
+      [0, 30],
+      [50, 52],
+    ]);
+    expect(isWatched(s.ranges, 45)).toBe(false);
+  });
+
+  it('another hop counts again once you have played long enough since the last one', () => {
+    const s = run([...play(0, 20, 1), ...seekTo(30), ...play(30, 36, 1), ...seekTo(46), ...play(46, 47, 1)]);
+    expect(s.ranges).toEqual([[0, 47]]);
+  });
+
+  it('a hop right after starting does not count', () => {
+    const s = run([...play(0, 3, 1), ...seekTo(13), ...play(13, 15, 1)]);
+    expect(s.ranges).toEqual([
+      [0, 3],
+      [13, 15],
+    ]);
+  });
+
+  it('a backward hop never adds anything', () => {
+    const s = run([...play(0, 20, 1), ...seekTo(12)]);
+    expect(s.ranges).toEqual([[0, 20]]);
+  });
+
+  it('a short jump seen only as a timeupdate (no seek events) counts the same way', () => {
+    const s = run([...play(0, 20, 1), tick(28), tick(28.5)]);
+    expect(s.ranges).toEqual([[0, 28.5]]);
+    const tooSoon = run([...play(0, 2, 1), tick(10)]);
+    expect(tooSoon.ranges).toEqual([[0, 2]]);
+  });
+
+  it('a hop while paused counts once if you had been playing before pausing', () => {
+    const s = run([...play(0, 20, 1), tick(20, { paused: true }), ...seekTo(30), tick(30, { paused: true }), ...seekTo(40)]);
+    expect(s.ranges).toEqual([[0, 30]]);
+  });
+
+  it('several seeking events during one scrub are judged from where the scrub started', () => {
+    const s = run([...play(0, 20, 1), { kind: 'seeking' }, tick(25, { seeking: true }), { kind: 'seeking' }, { kind: 'seeked', time: 29 }]);
+    expect(s.ranges).toEqual([[0, 29]]);
+  });
+
+  it('reset clears the playback credit', () => {
+    const s = run([...play(0, 20, 1), { kind: 'reset' }, tick(20), ...seekTo(28)]);
+    expect(s.ranges).toEqual([[0, 20]]);
   });
 });
