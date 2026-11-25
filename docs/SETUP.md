@@ -97,10 +97,17 @@ Check: **Table Editor** should list `profiles`, `comments`, `likes`,
    - **Authorized redirect URIs → Add URI:**
      `https://<project-ref>.supabase.co/auth/v1/callback`
    - Click **Create**, then copy the **Client ID** and **Client secret**.
-6. **Audience → Publishing status:** click **Publish app** → **Confirm**. The status
-   should change from *Testing* to **In production**. In *Testing*, only test
-   users you list can sign in. With only the three basic scopes above, Google
-   requires no verification for production.
+6. **Audience → Test users → Add users:** add the Google account(s) you will
+   test with (up to 100), then **Save**. While the app is in *Testing*, only
+   these accounts can sign in; everyone else sees "access blocked".
+7. **Later, to let anyone sign in: publish the app.** Google enables
+   **Audience → Publish app** only once the **Branding** page is complete,
+   which includes an app home page link and a **privacy policy link**. The
+   privacy policy page is added in M6 (GitHub Pages). Then: fill in Branding
+   (home page `https://github.com/shaurya12405/netflix-reactions`, privacy
+   policy URL, and add `shaurya12405.github.io` under authorized domains if
+   asked), and click **Publish app → Confirm**. With only the three basic
+   scopes above, Google requires no verification for production.
 
 ## 5. Turn on Google sign-in in Supabase
 
