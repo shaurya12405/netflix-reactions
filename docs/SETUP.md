@@ -144,18 +144,39 @@ Then reload the extension on `chrome://extensions` (circular arrow on the Scene 
 In Supabase → **Authentication → Users** you should see your account, and
 **Table Editor → profiles** should show your display name.
 
-## 8. Netflix connectivity check
+## 8. Deploy the comment server function
 
-This checks whether Netflix's security settings block Scene Talk from talking
-to Supabase directly from the page (relevant for Firefox especially).
+Comments are created only by a server function (`supabase/functions/post-comment`),
+which checks who you are and validates the comment before saving it. Deploy it,
+and apply any new database migrations, from the repo folder:
 
-1. Open any Netflix episode. In the Scene Talk panel click **Check Supabase connectivity**.
-2. Note the four results (content script / background × REST / Realtime).
-3. Repeat in Firefox if you can.
+```bash
+npx supabase@latest db push --remote
+```
 
-Green everywhere means comments can load straight from the page. Any red
-under "From content script" means M3 routes those requests through the
-background script instead. Either way, send the results to continue.
+```bash
+npx supabase@latest functions deploy post-comment --use-api --no-verify-jwt
+```
+
+`--use-api` bundles the function on Supabase's side, so Docker isn't needed.
+`--no-verify-jwt` is intended: the function verifies the sign-in token itself
+(this works with Supabase's newer signing keys). Repeat both commands whenever
+a later milestone changes the database or the function.
+
+Check: Supabase → **Edge Functions** lists `post-comment`.
+
+## 9. Try comments
+
+```bash
+npm run build
+```
+
+Reload the extension on `chrome://extensions`, then open a Netflix episode.
+
+1. The panel header should show a green **Live** dot within a few seconds.
+2. Press **C** (or click **Comment at …**), type something, press **Enter**.
+   Playback keeps going and your comment appears marked **you**.
+3. Supabase → **Table Editor → comments** shows the new row.
 
 ---
 

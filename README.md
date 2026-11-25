@@ -3,11 +3,11 @@
 Spoiler-safe comments that replay at the exact moment they were written.
 Works with Netflix. Not affiliated with or endorsed by Netflix.
 
-> **Status: Milestone 2 (backend).** The extension detects the player, mounts a
-> status panel (also in fullscreen and across episode changes), records which
-> parts of each episode you have actually watched, and supports Google sign-in
-> with a chosen display name. The database schema is in place; the comment UI
-> arrives in M3.
+> **Status: Milestone 3 (comments).** Comments appear in a side panel (or as
+> pop-ups) at the moment they were written, never beyond the furthest point you
+> have reached in the episode. Post with **C** without pausing; new comments arrive
+> live. Moderation and reporting arrive in M4; likes, replies, reactions and
+> the heat map in M5.
 
 **Backend setup (free, ~20 minutes): [docs/SETUP.md](docs/SETUP.md)**
 
@@ -16,9 +16,12 @@ Works with Netflix. Not affiliated with or endorsed by Netflix.
 | Piece | Where | Notes |
 | --- | --- | --- |
 | Netflix adapter | `src/adapters/netflix.ts` | The **only** file that knows Netflix's URLs and DOM. Reads the title ID from `/watch/<id>` and the `<video>` element's time and events. Never touches DRM, the stream or frames. |
-| Watched ranges | `src/core/watched-ranges.ts` | Pure, unit-tested. Records intervals you actually played through. Continuity is measured in media time: a jump of more than 2 s counts as a seek, so skipping ahead never unlocks the skipped part. |
+| Progress | `src/core/watched-ranges.ts` | Pure, unit-tested. Tracks the furthest point you've reached in each video, however you got there (playing, skipping, resuming). Everything before it is unlocked; going back never re-hides anything; nothing after it is shown. |
 | Controller | `src/content/controller.ts` | Wires the adapter to tracking, storage and the UI. Platform-agnostic. |
-| UI | `src/ui/` | Preact inside a Shadow DOM, mounted inside the player container so it survives fullscreen. |
+| UI | `src/ui/` | Preact inside a Shadow DOM, mounted inside the player container so it survives fullscreen. Side panel, pop-ups or hidden (remembered). |
+| Spoiler filter | `src/core/spoiler-filter.ts` | Pure, unit-tested. A comment is shown only if its timestamp is before the furthest point you've reached (your own always). Replies also need their parent visible, so a later reply never leaks under an early comment. |
+| Comment sync | `src/content/comments-sync.ts`, `src/core/windowing.ts` | Fetches comments in 60-second windows (everything watched plus one window ahead), merged into as few requests as possible, and adds live inserts from Supabase Realtime. Having a comment in memory never reveals it; the spoiler filter decides. |
+| Posting | `src/background/comments.ts`, `supabase/functions/post-comment/` | The content script asks the background, which calls the `post-comment` Edge Function with the signed-in session. The function takes the author from the verified JWT (never the request body), validates everything, and inserts with the service role. |
 | Event shield | `src/ui/event-shield.ts` | Keeps the player from reacting to typing and clicks in our panel (details below). |
 | Auth | `src/background/auth.ts` | Google sign-in through Supabase (PKCE) with `identity.launchWebAuthFlow`, run in the background script, because the popup closes when the Google window opens. The session lives in extension storage. |
 | Database | `supabase/migrations/` | Postgres tables with Row Level Security, rate limits and the heat-map RPC (see below). |
@@ -42,7 +45,7 @@ All rules are enforced in Postgres, so they hold no matter which client calls th
 | Table | Signed-out visitors | Signed-in users |
 | --- | --- | --- |
 | `profiles` | read `id`, `display_name` only | create, rename, delete their own; names are unique ignoring case |
-| `comments` | read | read, delete their own. **No direct insert or edit**: from M3 an Edge Function validates and moderates, then inserts with the service role |
+| `comments` | read | read, delete their own. **No direct insert or edit**: the `post-comment` Edge Function validates (and from M4 moderates), then inserts with the service role |
 | `likes` | none | like/unlike as themselves; see only their own likes. `like_count` is kept by a `SECURITY DEFINER` trigger |
 | `reactions` | read (without `user_id`) | add/remove their own |
 | `reports` | none | report as themselves, once per comment; see only their own reports |
@@ -79,13 +82,15 @@ npm run build:all      # production builds in .output/chrome-mv3 and .output/fir
 npm run typecheck
 npm test               # unit tests (Vitest)
 npm run test:db        # database tests (pgTAP) on a throwaway local Postgres
-npm run test:e2e       # builds, then runs a Playwright smoke test against a fake player page
+npm run test:e2e       # builds into .output-e2e, then runs a Playwright test against a fake player and a fake Supabase
 ```
 
 `test:e2e` needs `ffmpeg` (to generate a test video) and a Playwright Chromium
 (`npx playwright install chromium`). Set `PW_CHROMIUM_PATH` to use another
 Chromium binary. The smoke test uses a fake player page, so it checks Scene
-Talk's own logic but not Netflix's real markup; for that, see below.
+Talk's own logic but not Netflix's real markup or a real Supabase project; for
+those, see below and docs/SETUP.md. (Live updates aren't covered there: content
+scripts open their WebSocket in an isolated world that Playwright can't mock.)
 
 ### Load the build manually
 

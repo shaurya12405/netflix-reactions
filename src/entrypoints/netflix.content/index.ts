@@ -11,7 +11,9 @@ export default defineContentScript({
   // Run before page scripts so our keyboard shield is registered first.
   runAt: 'document_start',
   main(ctx) {
-    const stop = startController(window, createNetflixAdapter(window));
+    // When the extension is reloaded, this old copy is cut off: ctx.isValid
+    // turns false and fires onInvalidated, which removes the UI and stops.
+    const stop = startController(window, createNetflixAdapter(window), { isAlive: () => ctx.isValid });
     ctx.onInvalidated(stop);
   },
 });

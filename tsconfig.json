@@ -7,7 +7,17 @@
     "exactOptionalPropertyTypes": false,
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
-    "types": ["vite/client"]
+    "types": [
+      "vite/client"
+    ],
+    "allowImportingTsExtensions": true,
+    "noEmit": true
   },
-  "include": [".wxt/wxt.d.ts", "src", "tests/unit", "wxt.config.ts", "vitest.config.ts"]
+  "include": [
+    ".wxt/wxt.d.ts",
+    "src",
+    "tests/unit",
+    "wxt.config.ts",
+    "vitest.config.ts"
+  ]
 }

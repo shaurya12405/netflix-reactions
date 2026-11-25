@@ -19,3 +19,7 @@ enabled = true
 [auth]
 enabled = true
 site_url = "http://127.0.0.1:3000"
+
+# The function verifies the caller's JWT itself (works with new signing keys).
+[functions.post-comment]
+verify_jwt = false
