@@ -117,6 +117,12 @@ await context.route(`${SUPABASE}/**`, async (route) => {
     return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
   }
   if (url.pathname === '/rest/v1/comments') {
+    // Like real PostgREST: likes makes comments<->profiles ambiguous, so an
+    // embed must name the author foreign key.
+    const select = url.searchParams.get('select') ?? '';
+    if (/(^|,)profiles\(/.test(select)) {
+      return json(300, { code: 'PGRST201', message: "Could not embed because more than one relationship was found for 'comments' and 'profiles'" });
+    }
     const [lo, hi] = ['gte.', 'lt.'].map((p) => Number(url.searchParams.getAll('ts_seconds').find((v) => v.startsWith(p))?.slice(p.length)));
     const video = url.searchParams.get('video_id')?.replace(/^eq\./, '');
     const rows = comments

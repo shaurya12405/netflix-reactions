@@ -14,6 +14,9 @@ const PAGE_SIZE = 500;
 /** Safety cap per span; a 60 s window with more than this is not realistic. */
 const MAX_ROWS_PER_SPAN = 5000;
 const COLUMNS = 'id, video_id, ts_seconds, user_id, parent_id, text, is_spoiler, like_count, created_at';
+// The author's profile must be named by its foreign key: `likes` also links
+// comments and profiles (many-to-many), so a bare `profiles(...)` embed is
+// ambiguous and PostgREST rejects it (PGRST201).
 
 export interface FetchResult {
   readonly comments: Comment[];
@@ -40,7 +43,7 @@ export function createCommentsApi(config: SupabaseConfig): CommentsApi {
       for (let from = 0; from < MAX_ROWS_PER_SPAN; from += PAGE_SIZE) {
         const { data, error } = await client
           .from('comments')
-          .select(`${COLUMNS}, profiles(display_name)`)
+          .select(`${COLUMNS}, profiles!comments_user_id_fkey(display_name)`)
           .eq('video_id', videoId)
           .gte('ts_seconds', start)
           .lt('ts_seconds', end)
