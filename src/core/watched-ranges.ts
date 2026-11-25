@@ -26,8 +26,12 @@ export const MERGE_EPSILON = 0.25;
  */
 export const MAX_CONTINUOUS_STEP = 2;
 
-/** Longest forward hop (seconds) that still counts as watched. */
-export const MAX_BRIDGED_HOP = 10;
+/**
+ * Longest forward hop (seconds) that still counts as watched: a 10 s skip,
+ * plus slack because the hop is measured from the last timeupdate, which can
+ * be up to ~0.25 s (more if the tab is throttled) before the skip happened.
+ */
+export const MAX_BRIDGED_HOP = 11;
 
 /** Seconds of real playback needed since the previous bridged hop. */
 export const MIN_PLAY_BEFORE_HOP = 5;

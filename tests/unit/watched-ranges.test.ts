@@ -201,6 +201,12 @@ describe('short hops (skip button)', () => {
     expect(isWatched(s.ranges, 25)).toBe(true);
   });
 
+  it('a real 10 s skip counts even when measured from a timeupdate a moment earlier', () => {
+    // Last timeupdate at 19.75, the skip button jumps from 20 to 30.
+    const s = run([...play(0, 19.75, 0.25), ...seekTo(30), ...play(30, 31, 0.25)]);
+    expect(s.ranges).toEqual([[0, 31]]);
+  });
+
   it('a hop longer than the limit is still a skip', () => {
     const s = run([...play(0, 20, 1), ...seekTo(20 + MAX_BRIDGED_HOP + 1), ...play(31, 33, 1)]);
     expect(s.ranges).toEqual([
