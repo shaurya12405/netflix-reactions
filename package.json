@@ -19,10 +19,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "npm run build && node tests/e2e/smoke.mjs",
-    "postinstall": "wxt prepare"
+    "postinstall": "wxt prepare",
+    "test:db": "./scripts/test-db.sh"
   },
   "dependencies": {
     "@preact/signals": "^2.11.4",
+    "@supabase/supabase-js": "^2.119.2",
     "preact": "^11.2.0"
   },
   "devDependencies": {

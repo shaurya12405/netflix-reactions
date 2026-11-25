@@ -3,9 +3,13 @@
 Spoiler-safe comments that replay at the exact moment they were written.
 Works with Netflix. Not affiliated with or endorsed by Netflix.
 
-> **Status: Milestone 1 (scaffold).** The extension detects the player, mounts
-> a status panel (also in fullscreen and across episode changes) and records
-> which parts of each episode you have actually watched. Comments arrive in M3.
+> **Status: Milestone 2 (backend).** The extension detects the player, mounts a
+> status panel (also in fullscreen and across episode changes), records which
+> parts of each episode you have actually watched, and supports Google sign-in
+> with a chosen display name. The database schema is in place; the comment UI
+> arrives in M3.
+
+**Backend setup (free, ~20 minutes): [docs/SETUP.md](docs/SETUP.md)**
 
 ## How it works (so far)
 
@@ -16,6 +20,8 @@ Works with Netflix. Not affiliated with or endorsed by Netflix.
 | Controller | `src/content/controller.ts` | Wires the adapter to tracking, storage and the UI. Platform-agnostic. |
 | UI | `src/ui/` | Preact inside a Shadow DOM, mounted inside the player container so it survives fullscreen. |
 | Event shield | `src/ui/event-shield.ts` | Keeps the player from reacting to typing and clicks in our panel (details below). |
+| Auth | `src/background/auth.ts` | Google sign-in through Supabase (PKCE) with `identity.launchWebAuthFlow`, run in the background script, because the popup closes when the Google window opens. The session lives in extension storage. |
+| Database | `supabase/migrations/` | Postgres tables with Row Level Security, rate limits and the heat-map RPC (see below). |
 
 The content script matches all of `www.netflix.com` because Netflix is a
 single-page app: you reach `/watch/<id>` from `/browse` without a page load, so
@@ -29,6 +35,28 @@ too late. So Scene Talk registers capture listeners on `window` at
 originate inside its UI. Text input still works because default actions are
 unaffected.
 
+## Database and security model
+
+All rules are enforced in Postgres, so they hold no matter which client calls the API.
+
+| Table | Signed-out visitors | Signed-in users |
+| --- | --- | --- |
+| `profiles` | read `id`, `display_name` only | create, rename, delete their own; names are unique ignoring case |
+| `comments` | read | read, delete their own. **No direct insert or edit**: from M3 an Edge Function validates and moderates, then inserts with the service role |
+| `likes` | none | like/unlike as themselves; see only their own likes. `like_count` is kept by a `SECURITY DEFINER` trigger |
+| `reactions` | read (without `user_id`) | add/remove their own |
+| `reports` | none | report as themselves, once per comment; see only their own reports |
+
+Triggers also force `created_at` and `like_count` on insert, keep replies one
+level deep on the same video, and rate-limit per user: 5 comments and 20
+reactions per minute, serialised with an advisory lock so parallel requests
+can't slip through. `heatmap(p_video_id)` returns comment and reaction counts
+per 10-second bucket. Video IDs are namespaced by platform (`netflix:80100172`).
+
+`supabase/tests/database/` holds pgTAP tests for every rule above. Run them with
+`npm run test:db` (Linux or WSL: needs PostgreSQL plus pgTAP; see the script
+header), or with Docker via `npx supabase start` then `npx supabase test db`. CI runs them on every push.
+
 ## Development
 
 Requires Node 22+.
@@ -41,7 +69,8 @@ npm install
 cp .env.example .env
 ```
 
-Fill in `.env` once the Supabase project exists (M2). Until then it can stay empty.
+Fill in `.env` as described in [docs/SETUP.md](docs/SETUP.md). Without it the
+extension still builds; sign-in is simply disabled.
 
 ```bash
 npm run dev            # Chrome with hot reload
@@ -49,6 +78,7 @@ npm run dev:firefox    # Firefox with hot reload
 npm run build:all      # production builds in .output/chrome-mv3 and .output/firefox-mv3
 npm run typecheck
 npm test               # unit tests (Vitest)
+npm run test:db        # database tests (pgTAP) on a throwaway local Postgres
 npm run test:e2e       # builds, then runs a Playwright smoke test against a fake player page
 ```
 

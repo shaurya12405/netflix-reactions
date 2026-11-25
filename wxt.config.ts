@@ -27,7 +27,8 @@ export default defineConfig({
     name: 'Scene Talk',
     description:
       'Spoiler-safe comments that replay at the exact moment they were written. Works with Netflix.',
-    permissions: ['storage'],
+    // identity: Google sign-in via launchWebAuthFlow (no install warning).
+    permissions: ['storage', 'identity'],
     host_permissions: ['*://www.netflix.com/*'],
     ...(browser === 'firefox'
       ? {
@@ -35,9 +36,12 @@ export default defineConfig({
             gecko: {
               id: GECKO_ID,
               strict_min_version: '140.0',
-              // Required by AMO for new add-ons. M1 sends nothing anywhere;
-              // this is revisited when sign-in and comments arrive (M2/M3).
-              data_collection_permissions: { required: ['none'] },
+              // Required by AMO for new add-ons. Google sign-in sends the
+              // account identity to Supabase. Revisit in M3 (comments send
+              // the title ID and timestamp being watched).
+              data_collection_permissions: {
+                required: ['authenticationInfo', 'personallyIdentifyingInfo'],
+              },
             },
           },
         }

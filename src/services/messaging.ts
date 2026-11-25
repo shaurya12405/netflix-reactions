@@ -4,13 +4,31 @@
  * and Firefox.
  */
 import { browser } from 'wxt/browser';
+import type { ActionResult, AuthState } from '../background/auth';
 import type { ConnectivityReport } from './connectivity';
 
+type Failure = { error: string };
+
 export interface MessageMap {
-  'probe-connectivity': { request: void; response: ConnectivityReport | { error: string } };
+  'probe-connectivity': { request: void; response: ConnectivityReport | Failure };
+  'auth:get-state': { request: void; response: AuthState | Failure };
+  'auth:sign-in': { request: void; response: ActionResult };
+  'auth:sign-out': { request: void; response: ActionResult };
+  'auth:set-display-name': { request: { displayName: string }; response: ActionResult };
+  'auth:get-redirect-url': { request: void; response: string };
 }
 
 export type MessageType = keyof MessageMap;
+
+/**
+ * Messages that change the account may only come from our own extension pages
+ * (popup, settings), never from a content script running inside a web page.
+ */
+const EXTENSION_PAGE_ONLY: ReadonlySet<MessageType> = new Set([
+  'auth:sign-in',
+  'auth:sign-out',
+  'auth:set-display-name',
+]);
 
 interface Envelope<T extends MessageType = MessageType> {
   readonly type: T;
@@ -22,7 +40,17 @@ export function sendMessage<T extends MessageType>(
   payload: MessageMap[T]['request'],
 ): Promise<MessageMap[T]['response']> {
   const envelope: Envelope<T> = { type, payload };
-  return browser.runtime.sendMessage(envelope) as Promise<MessageMap[T]['response']>;
+  return (browser.runtime.sendMessage(envelope) as Promise<MessageMap[T]['response'] | undefined>).then(
+    (response) => {
+      if (response === undefined) throw new Error(`No response to "${type}" (message rejected or no handler).`);
+      return response;
+    },
+  );
+}
+
+/** True if the message was sent by one of our extension pages (not a web page). */
+function isFromExtensionPage(senderUrl: string | undefined): boolean {
+  return typeof senderUrl === 'string' && senderUrl.startsWith(browser.runtime.getURL('/'));
 }
 
 export type Handlers = {
@@ -37,10 +65,11 @@ export function listenForMessages(handlers: Handlers): void {
   browser.runtime.onMessage.addListener((msg: unknown, sender, sendResponse) => {
     // Only accept messages from our own extension.
     if (sender.id !== browser.runtime.id || !isEnvelope(msg)) return false;
+    if (EXTENSION_PAGE_ONLY.has(msg.type) && !isFromExtensionPage(sender.url)) return false;
     const handler = handlers[msg.type] as ((p: unknown) => Promise<unknown>) | undefined;
     if (!handler) return false;
     handler(msg.payload).then(sendResponse, (e: unknown) =>
-      sendResponse({ error: e instanceof Error ? e.message : String(e) }),
+      sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) }),
     );
     return true;
   });
