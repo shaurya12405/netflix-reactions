@@ -4,8 +4,8 @@ Spoiler-safe comments that replay at the exact moment they were written.
 Works with Netflix. Not affiliated with or endorsed by Netflix.
 
 > **Status: Milestone 3 (comments).** Comments appear in a side panel (or as
-> pop-ups) at the moment they were written, only for parts of the episode you
-> have actually watched. Post with **C** without pausing; new comments arrive
+> pop-ups) at the moment they were written, never beyond the furthest point you
+> have reached in the episode. Post with **C** without pausing; new comments arrive
 > live. Moderation and reporting arrive in M4; likes, replies, reactions and
 > the heat map in M5.
 
@@ -16,10 +16,10 @@ Works with Netflix. Not affiliated with or endorsed by Netflix.
 | Piece | Where | Notes |
 | --- | --- | --- |
 | Netflix adapter | `src/adapters/netflix.ts` | The **only** file that knows Netflix's URLs and DOM. Reads the title ID from `/watch/<id>` and the `<video>` element's time and events. Never touches DRM, the stream or frames. |
-| Watched ranges | `src/core/watched-ranges.ts` | Pure, unit-tested. Records intervals you actually played through, measured in media time, so skipping ahead never unlocks the skipped part. One allowance: a forward hop of about 10 s (the skip button) counts as watched if you'd played at least 5 s since the previous hop, so repeated tapping can't unlock a long stretch. |
+| Progress | `src/core/watched-ranges.ts` | Pure, unit-tested. Tracks the furthest point you've reached in each video, however you got there (playing, skipping, resuming). Everything before it is unlocked; going back never re-hides anything; nothing after it is shown. |
 | Controller | `src/content/controller.ts` | Wires the adapter to tracking, storage and the UI. Platform-agnostic. |
 | UI | `src/ui/` | Preact inside a Shadow DOM, mounted inside the player container so it survives fullscreen. Side panel, pop-ups or hidden (remembered). |
-| Spoiler filter | `src/core/spoiler-filter.ts` | Pure, unit-tested. A comment is shown only if its timestamp is inside a watched range (your own always). Replies also need their parent visible, so a later reply never leaks under an early comment. |
+| Spoiler filter | `src/core/spoiler-filter.ts` | Pure, unit-tested. A comment is shown only if its timestamp is before the furthest point you've reached (your own always). Replies also need their parent visible, so a later reply never leaks under an early comment. |
 | Comment sync | `src/content/comments-sync.ts`, `src/core/windowing.ts` | Fetches comments in 60-second windows (everything watched plus one window ahead), merged into as few requests as possible, and adds live inserts from Supabase Realtime. Having a comment in memory never reveals it; the spoiler filter decides. |
 | Posting | `src/background/comments.ts`, `supabase/functions/post-comment/` | The content script asks the background, which calls the `post-comment` Edge Function with the signed-in session. The function takes the author from the verified JWT (never the request body), validates everything, and inserts with the service role. |
 | Event shield | `src/ui/event-shield.ts` | Keeps the player from reacting to typing and clicks in our panel (details below). |

@@ -1,14 +1,17 @@
 /**
- * Watched ranges: the set of media-time intervals a viewer has actually played
- * through. Spoiler gating is built on this, not on a single "furthest" number,
- * so skipping ahead never unlocks the skipped part.
+ * Progress tracking for spoiler gating.
  *
- * One allowance: a short forward hop (up to MAX_BRIDGED_HOP seconds, e.g. the
- * 10-second skip button) counts as watched, but only after at least
- * MIN_PLAY_BEFORE_HOP seconds of real playback since the previous hop, so
- * tapping skip repeatedly cannot unlock a long stretch.
+ * Rule (product decision): a viewer may see everything up to the FURTHEST
+ * point they have reached in a video, however they got there (playing,
+ * skipping, dragging, resuming). Skipping ahead is the viewer's choice, and
+ * going back never hides what was already unlocked. Anything beyond the
+ * furthest point stays hidden.
  *
- * Everything here is pure and immutable: functions return new arrays.
+ * The unlocked part is stored as ranges ([[0, furthest]] in practice) so the
+ * storage format and the filter stay general.
+ *
+ * Everything here is pure and immutable: functions return new arrays, or the
+ * same object when nothing changed.
  */
 
 /** Closed interval [start, end] in media seconds, start <= end. */
@@ -21,20 +24,11 @@ export const MERGE_EPSILON = 0.25;
 
 /**
  * Largest forward step in media time (seconds) between two consecutive samples
- * that still counts as continuous playback. Larger jumps are treated as seeks.
- * Measured on currentTime deltas, never wall-clock time.
+ * that counts as continuous playback (measured on currentTime deltas, never
+ * wall-clock time). Only used to decide when a comment is "reached by
+ * playback" for pop-ups; unlocking is by furthest position.
  */
 export const MAX_CONTINUOUS_STEP = 2;
-
-/**
- * Longest forward hop (seconds) that still counts as watched: a 10 s skip,
- * plus slack because the hop is measured from the last timeupdate, which can
- * be up to ~0.25 s (more if the tab is throttled) before the skip happened.
- */
-export const MAX_BRIDGED_HOP = 11;
-
-/** Seconds of real playback needed since the previous bridged hop. */
-export const MIN_PLAY_BEFORE_HOP = 5;
 
 const isValidNumber = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 
@@ -93,24 +87,37 @@ export function totalWatched(ranges: WatchedRanges): number {
   return ranges.reduce((sum, [s, e]) => sum + (e - s), 0);
 }
 
+/** The furthest point reached (end of the last range), or 0. */
+export function furthestReached(ranges: WatchedRanges): number {
+  return ranges.length === 0 ? 0 : ranges[ranges.length - 1]![1];
+}
+
+/** Everything up to `t` unlocked. Same object back if already covered. */
+export function reachTo(ranges: WatchedRanges, t: number): WatchedRanges {
+  if (!isValidNumber(t) || t < 0) return ranges;
+  if (ranges.length === 1 && ranges[0]![0] === 0 && ranges[0]![1] >= t) return ranges;
+  return [[0, Math.max(t, furthestReached(ranges))]];
+}
+
+/** Converts stored ranges (possibly with gaps, from older versions) to [[0, furthest]]. */
+export function toReachedRanges(ranges: WatchedRanges): WatchedRanges {
+  return ranges.length === 0 ? [] : reachTo([], furthestReached(ranges));
+}
+
 // ---------------------------------------------------------------------------
-// Progress tracker: turns a stream of playback samples into watched ranges.
+// Progress tracker: turns a stream of playback samples into unlocked ranges.
 // ---------------------------------------------------------------------------
 
 export interface TrackerState {
   readonly ranges: WatchedRanges;
   /** currentTime of the previous sample, or null after a seek/reset. */
   readonly lastTime: number | null;
-  /** Position when the current seek started (to judge a short hop), or null. */
-  readonly seekFrom: number | null;
-  /** Seconds of continuous playback since the last bridged hop (or start). */
-  readonly playedSinceHop: number;
 }
 
 export type PlaybackSample =
   /** A timeupdate (or polling) sample of the video element. */
   | { readonly kind: 'tick'; readonly time: number; readonly paused: boolean; readonly seeking: boolean }
-  /** The video started seeking: the next segment must not bridge the jump. */
+  /** The video started seeking. */
   | { readonly kind: 'seeking' }
   /** The seek finished at `time`. */
   | { readonly kind: 'seeked'; readonly time: number }
@@ -118,57 +125,24 @@ export type PlaybackSample =
   | { readonly kind: 'reset' };
 
 export function createTracker(ranges: WatchedRanges = []): TrackerState {
-  return { ranges, lastTime: null, seekFrom: null, playedSinceHop: 0 };
-}
-
-/** True if a forward jump from `from` to `to` may count as watched. */
-function canBridge(state: TrackerState, from: number | null, to: number): from is number {
-  if (from === null) return false;
-  const hop = to - from;
-  return hop > 0 && hop <= MAX_BRIDGED_HOP && state.playedSinceHop >= MIN_PLAY_BEFORE_HOP;
+  return { ranges: toReachedRanges(ranges), lastTime: null };
 }
 
 export function stepTracker(state: TrackerState, sample: PlaybackSample): TrackerState {
   switch (sample.kind) {
     case 'reset':
-      return state.lastTime === null && state.seekFrom === null && state.playedSinceHop === 0
-        ? state
-        : { ...state, lastTime: null, seekFrom: null, playedSinceHop: 0 };
-
     case 'seeking':
-      // Keep the original start if several seeking events fire during one scrub.
-      if (state.lastTime === null) return state;
-      return { ...state, lastTime: null, seekFrom: state.seekFrom ?? state.lastTime };
-
-    case 'seeked': {
-      const time = isValidNumber(sample.time) ? sample.time : null;
-      if (time !== null && canBridge(state, state.seekFrom, time)) {
-        return { ranges: addRange(state.ranges, state.seekFrom, time), lastTime: time, seekFrom: null, playedSinceHop: 0 };
-      }
-      return { ...state, lastTime: time, seekFrom: null };
-    }
-
+      return state.lastTime === null ? state : { ranges: state.ranges, lastTime: null };
+    case 'seeked':
     case 'tick': {
-      const { time, seeking, paused } = sample;
-      if (!isValidNumber(time) || time < 0 || seeking) {
-        return state.lastTime === null ? state : { ...state, lastTime: null, seekFrom: state.seekFrom ?? state.lastTime };
+      const { time } = sample;
+      if (!isValidNumber(time) || time < 0 || (sample.kind === 'tick' && sample.seeking)) {
+        return state.lastTime === null ? state : { ranges: state.ranges, lastTime: null };
       }
-      const step = continuousStep(state.lastTime, sample);
-      if (step) {
-        return {
-          ranges: addRange(state.ranges, step[0], step[1]),
-          lastTime: time,
-          seekFrom: null,
-          playedSinceHop: state.playedSinceHop + (step[1] - step[0]),
-        };
-      }
-      // A short forward jump seen without seek events (some players skip that way).
-      if (!paused && canBridge(state, state.lastTime, time)) {
-        return { ranges: addRange(state.ranges, state.lastTime, time), lastTime: time, seekFrom: null, playedSinceHop: 0 };
-      }
-      // Paused, first sample, backwards jump, or a forward jump that is too
-      // long (or too soon after the last hop): re-anchor without recording.
-      return { ...state, lastTime: time, seekFrom: null };
+      // Any position the player actually reaches (played to, skipped to,
+      // resumed at, paused at) unlocks everything before it.
+      const ranges = reachTo(state.ranges, time);
+      return ranges === state.ranges && state.lastTime === time ? state : { ranges, lastTime: time };
     }
   }
 }

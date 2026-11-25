@@ -26,7 +26,7 @@ describe('isCommentVisible', () => {
     expect(isCommentVisible(c(2430), watched, null)).toBe(true);
   });
 
-  it('hides comments from the skipped part after a forward seek', () => {
+  it('hides comments outside the unlocked ranges', () => {
     expect(isCommentVisible(c(1200), watched, null)).toBe(false);
     expect(isCommentVisible(c(600.5), watched, null)).toBe(false);
   });

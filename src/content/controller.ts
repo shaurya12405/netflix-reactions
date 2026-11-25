@@ -14,6 +14,7 @@ import {
   createTracker,
   normalizeRanges,
   stepTracker,
+  toReachedRanges,
   type PlaybackSample,
   type TrackerState,
 } from '../core/watched-ranges';
@@ -203,7 +204,8 @@ export function startController(win: Window, adapter: PlatformAdapter, options: 
       .then((stored) => {
         if (token !== loadToken || stored.length === 0) return;
         // Merge with anything recorded while storage was loading.
-        tracker = { ...tracker, ranges: normalizeRanges([...stored, ...tracker.ranges]) };
+        // Older versions stored gaps; the furthest point reached is what counts now.
+        tracker = { ...tracker, ranges: toReachedRanges(normalizeRanges([...stored, ...tracker.ranges])) };
         state.watchedRanges.value = tracker.ranges;
         sync.ensure(tracker.ranges, state.currentTime.value);
       })

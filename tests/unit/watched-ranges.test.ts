@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
-  MAX_BRIDGED_HOP,
   MAX_CONTINUOUS_STEP,
-  MIN_PLAY_BEFORE_HOP,
   addRange,
   continuousStep,
   createTracker,
   isWatched,
+  furthestReached,
   normalizeRanges,
+  reachTo,
   stepTracker,
+  toReachedRanges,
   totalWatched,
   type PlaybackSample,
   type TrackerState,
@@ -97,83 +98,81 @@ describe('addRange / totalWatched', () => {
   });
 });
 
-describe('stepTracker', () => {
-  it('records continuous playback', () => {
-    const s = run(play(0, 60));
-    expect(s.ranges).toEqual([[0, 60]]);
+describe('reachTo / furthestReached / toReachedRanges', () => {
+  it('unlocks everything up to the furthest point', () => {
+    expect(reachTo([], 90)).toEqual([[0, 90]]);
+    expect(furthestReached(reachTo([], 90))).toBe(90);
+    expect(furthestReached([])).toBe(0);
   });
 
-  it('a forward seek does NOT unlock the skipped part', () => {
-    // Watch 0-600, jump to 2400 (with seek events), watch a minute.
-    const s = run([...play(0, 600, 1), { kind: 'seeking' }, { kind: 'seeked', time: 2400 }, ...play(2400, 2460, 1)]);
-    expect(s.ranges).toEqual([
-      [0, 600],
-      [2400, 2460],
-    ]);
-    expect(isWatched(s.ranges, 1200)).toBe(false);
-    expect(isWatched(s.ranges, 2430)).toBe(true);
+  it('never moves backwards, and returns the same object when nothing changes', () => {
+    const r = reachTo([], 300);
+    expect(reachTo(r, 100)).toBe(r);
+    expect(reachTo(r, 300)).toBe(r);
+    expect(reachTo(r, 301)).toEqual([[0, 301]]);
   });
 
-  it('a jump larger than MAX_CONTINUOUS_STEP is treated as a seek even without seek events', () => {
-    const s = run([tick(10), tick(10 + MAX_CONTINUOUS_STEP + 0.5)]);
-    expect(s.ranges).toEqual([]);
-    // Playback continues normally from the new position.
-    expect(run([tick(10), tick(12.5), tick(13)]).ranges).toEqual([[12.5, 13]]);
-    const s2 = run([tick(10), tick(10 + MAX_CONTINUOUS_STEP)]);
-    expect(s2.ranges).toEqual([[10, 12]]);
+  it('converts gappy ranges from older versions to [0, furthest]', () => {
+    expect(toReachedRanges(normalizeRanges([[0, 600], [2400, 2460]]))).toEqual([[0, 2460]]);
+    expect(toReachedRanges([])).toEqual([]);
   });
 
-  it('measures continuity in media time: a long wall-clock gap between samples is fine', () => {
-    // e.g. a tab throttled for a while: only currentTime deltas matter.
-    const s = run([tick(100), tick(101.5), tick(103)]);
-    expect(s.ranges).toEqual([[100, 103]]);
+  it('ignores invalid times', () => {
+    const r = reachTo([], 10);
+    expect(reachTo(r, Number.NaN)).toBe(r);
+    expect(reachTo(r, -5)).toBe(r);
+  });
+});
+
+describe('stepTracker (furthest point reached)', () => {
+  it('playing unlocks up to the playhead', () => {
+    expect(run(play(0, 60)).ranges).toEqual([[0, 60]]);
   });
 
-  it('seeking backwards keeps earlier ranges and does not bridge', () => {
-    const s = run([...play(0, 300, 1), { kind: 'seeking' }, { kind: 'seeked', time: 100 }, ...play(100, 120, 1)]);
-    expect(s.ranges).toEqual([[0, 300]]);
+  it('skipping forward unlocks everything before the new position', () => {
+    const s = run([...play(0, 10, 1), { kind: 'seeking' }, { kind: 'seeked', time: 2400 }]);
+    expect(s.ranges).toEqual([[0, 2400]]);
+    expect(isWatched(s.ranges, 1200)).toBe(true);
+    expect(isWatched(s.ranges, 2401)).toBe(false);
   });
 
-  it('a backwards jump without seek events records nothing new', () => {
-    const s = run([tick(50), tick(51), tick(20), tick(21)]);
-    expect(s.ranges).toEqual([
-      [20, 21],
-      [50, 51],
-    ]);
+  it('coming back keeps everything up to the furthest point unlocked', () => {
+    const s = run([...play(0, 10, 1), { kind: 'seeking' }, { kind: 'seeked', time: 900 }, { kind: 'seeking' }, { kind: 'seeked', time: 100 }, ...play(100, 110, 1)]);
+    expect(s.ranges).toEqual([[0, 900]]);
   });
 
-  it('does not record while paused or seeking', () => {
-    const s = run([tick(5, { paused: true }), tick(6, { paused: true }), tick(7, { seeking: true }), tick(8)]);
-    expect(s.ranges).toEqual([]);
+  it('a position reached while paused counts too (e.g. resuming or dragging while paused)', () => {
+    expect(run([tick(1500, { paused: true })]).ranges).toEqual([[0, 1500]]);
   });
 
-  it('a paused scrub then play only records from the new position', () => {
-    const s = run([...play(0, 10, 1), tick(10, { paused: true }), tick(500, { paused: true }), tick(500), tick(501)]);
-    expect(s.ranges).toEqual([
-      [0, 10],
-      [500, 501],
-    ]);
+  it('a jump seen only as a timeupdate counts the same as a seek', () => {
+    expect(run([tick(10), tick(500)]).ranges).toEqual([[0, 500]]);
   });
 
-  it('reset forgets the previous position but keeps ranges', () => {
+  it('does not unlock while the player is mid-seek', () => {
+    expect(run([tick(10), tick(800, { seeking: true })]).ranges).toEqual([[0, 10]]);
+  });
+
+  it('starts from stored progress, converting older gappy data', () => {
+    const s = run([tick(50)], createTracker(normalizeRanges([[0, 100], [300, 320]])));
+    expect(s.ranges).toEqual([[0, 320]]);
+  });
+
+  it('reset forgets the position but keeps what was unlocked', () => {
     const s = run([tick(0), tick(1), { kind: 'reset' }, tick(1.5)]);
-    expect(s.ranges).toEqual([[0, 1]]);
+    expect(s.ranges).toEqual([[0, 1.5]]);
     expect(s.lastTime).toBe(1.5);
   });
 
   it('ignores invalid times', () => {
-    const s = run([tick(1), tick(Number.NaN), tick(2), tick(-1), tick(3)]);
-    expect(s.ranges).toEqual([]);
+    expect(run([tick(1), tick(Number.NaN), tick(-1), tick(2)]).ranges).toEqual([[0, 2]]);
   });
 
   it('returns the same state object when nothing changes (cheap re-renders)', () => {
     const s0 = createTracker();
     expect(stepTracker(s0, { kind: 'seeking' })).toBe(s0);
-  });
-
-  it('works at 2x playback speed with 250 ms timeupdates', () => {
-    const s = run(play(0, 30, 0.5));
-    expect(s.ranges).toEqual([[0, 30]]);
+    const s1 = run([tick(5)]);
+    expect(stepTracker(s1, tick(5))).toBe(s1);
   });
 });
 
@@ -189,78 +188,5 @@ describe('continuousStep', () => {
     expect(continuousStep(10, tick(9))).toBeNull();
     expect(continuousStep(10, tick(10 + MAX_CONTINUOUS_STEP + 0.1))).toBeNull();
     expect(continuousStep(10, { kind: 'seeked', time: 11 })).toBeNull();
-  });
-});
-
-describe('short hops (skip button)', () => {
-  const seekTo = (t: number): PlaybackSample[] => [{ kind: 'seeking' }, { kind: 'seeked', time: t }];
-
-  it(`a hop of up to ${MAX_BRIDGED_HOP} s counts as watched after ${MIN_PLAY_BEFORE_HOP} s of playback`, () => {
-    const s = run([...play(0, 20, 1), ...seekTo(30), ...play(30, 35, 1)]);
-    expect(s.ranges).toEqual([[0, 35]]);
-    expect(isWatched(s.ranges, 25)).toBe(true);
-  });
-
-  it('a real 10 s skip counts even when measured from a timeupdate a moment earlier', () => {
-    // Last timeupdate at 19.75, the skip button jumps from 20 to 30.
-    const s = run([...play(0, 19.75, 0.25), ...seekTo(30), ...play(30, 31, 0.25)]);
-    expect(s.ranges).toEqual([[0, 31]]);
-  });
-
-  it('a hop longer than the limit is still a skip', () => {
-    const s = run([...play(0, 20, 1), ...seekTo(20 + MAX_BRIDGED_HOP + 1), ...play(31, 33, 1)]);
-    expect(s.ranges).toEqual([
-      [0, 20],
-      [31, 33],
-    ]);
-  });
-
-  it('tapping skip repeatedly only unlocks the first hop', () => {
-    const s = run([...play(0, 20, 1), ...seekTo(30), ...seekTo(40), ...seekTo(50), ...play(50, 52, 1)]);
-    expect(s.ranges).toEqual([
-      [0, 30],
-      [50, 52],
-    ]);
-    expect(isWatched(s.ranges, 45)).toBe(false);
-  });
-
-  it('another hop counts again once you have played long enough since the last one', () => {
-    const s = run([...play(0, 20, 1), ...seekTo(30), ...play(30, 36, 1), ...seekTo(46), ...play(46, 47, 1)]);
-    expect(s.ranges).toEqual([[0, 47]]);
-  });
-
-  it('a hop right after starting does not count', () => {
-    const s = run([...play(0, 3, 1), ...seekTo(13), ...play(13, 15, 1)]);
-    expect(s.ranges).toEqual([
-      [0, 3],
-      [13, 15],
-    ]);
-  });
-
-  it('a backward hop never adds anything', () => {
-    const s = run([...play(0, 20, 1), ...seekTo(12)]);
-    expect(s.ranges).toEqual([[0, 20]]);
-  });
-
-  it('a short jump seen only as a timeupdate (no seek events) counts the same way', () => {
-    const s = run([...play(0, 20, 1), tick(28), tick(28.5)]);
-    expect(s.ranges).toEqual([[0, 28.5]]);
-    const tooSoon = run([...play(0, 2, 1), tick(10)]);
-    expect(tooSoon.ranges).toEqual([[0, 2]]);
-  });
-
-  it('a hop while paused counts once if you had been playing before pausing', () => {
-    const s = run([...play(0, 20, 1), tick(20, { paused: true }), ...seekTo(30), tick(30, { paused: true }), ...seekTo(40)]);
-    expect(s.ranges).toEqual([[0, 30]]);
-  });
-
-  it('several seeking events during one scrub are judged from where the scrub started', () => {
-    const s = run([...play(0, 20, 1), { kind: 'seeking' }, tick(25, { seeking: true }), { kind: 'seeking' }, { kind: 'seeked', time: 29 }]);
-    expect(s.ranges).toEqual([[0, 29]]);
-  });
-
-  it('reset clears the playback credit', () => {
-    const s = run([...play(0, 20, 1), { kind: 'reset' }, tick(20), ...seekTo(28)]);
-    expect(s.ranges).toEqual([[0, 20]]);
   });
 });

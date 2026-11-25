@@ -1,12 +1,13 @@
 /**
  * Spoiler gating: which comments a viewer may see right now.
  *
- * A comment is visible only if its timestamp lies inside a range the viewer
- * has actually watched. Seeking back keeps earlier comments visible (they are
- * still inside watched ranges); seeking forward over unwatched footage does
- * not reveal anything from the skipped part. A viewer always sees their own
- * comments. A reply additionally needs its parent to be visible, so a reply
- * written later in the episode never leaks under an early comment.
+ * A comment is visible only if its timestamp lies inside the part of the
+ * video the viewer has unlocked: everything up to the furthest point they
+ * have reached (see watched-ranges.ts). Going back keeps earlier comments
+ * visible; nothing beyond the furthest point is ever shown. A viewer always
+ * sees their own comments. A reply additionally needs its parent to be
+ * visible, so a reply written later in the episode never leaks under an
+ * early comment.
  */
 import type { Comment, CommentThread } from './comment-types';
 import { isWatched, type WatchedRanges } from './watched-ranges';

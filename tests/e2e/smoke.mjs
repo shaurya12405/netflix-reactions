@@ -63,7 +63,7 @@ const comments = [
   row(uuid(1), 1.0, MIRA, 'First moment, already hooked'),
   row(uuid(2), 2.0, MIRA, 'The door matters later', { is_spoiler: true }),
   row(uuid(3), 2.5, TOMASZ, 'Agreed', { parent_id: uuid(1) }),
-  row(uuid(4), 40.0, MIRA, 'Big reveal in the skipped part'),
+  row(uuid(4), 40.0, MIRA, 'Big reveal in the skipped-over part'),
   row(uuid(5), 63.0, TOMASZ, 'Pop-up moment'),
   row(uuid(6), 85.0, MIRA, 'Way ahead'),
 ];
@@ -236,11 +236,11 @@ try {
     assert.match(await commentText('Loved this scene f').textContent(), /you/);
   });
 
-  await step('a forward seek does not reveal the skipped part', async () => {
+  await step('a forward skip reveals everything before the new position, nothing after', async () => {
     await page.evaluate(() => (document.querySelector('video').currentTime = 60));
     await waitForTime(61);
-    await page.waitForTimeout(500);
-    assert.equal(await commentText('Big reveal').count(), 0);
+    await commentText('Big reveal').waitFor({ timeout: 3000 }); // at 0:40, skipped over
+    assert.equal(await commentText('Way ahead').count(), 0); // at 1:25, not reached
   });
 
   await step('pop-up mode shows comments as playback reaches them', async () => {
@@ -278,7 +278,9 @@ try {
     await page.evaluate(() => document.querySelector('video').pause());
     await page.waitForTimeout(300);
     const stored = await worker.evaluate(() => chrome.storage.local.get(null));
-    assert.ok(stored['watched:netflix:80000001']?.ranges.length >= 2);
+    const [[start, furthest]] = stored['watched:netflix:80000001'].ranges;
+    assert.equal(start, 0);
+    assert.ok(furthest >= 60, `furthest point ${furthest} should be past the skip to 60`);
     assert.equal(stored['settings:displayMode'], 'panel');
   });
 
