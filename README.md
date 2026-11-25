@@ -16,7 +16,7 @@ Works with Netflix. Not affiliated with or endorsed by Netflix.
 | Piece | Where | Notes |
 | --- | --- | --- |
 | Netflix adapter | `src/adapters/netflix.ts` | The **only** file that knows Netflix's URLs and DOM. Reads the title ID from `/watch/<id>` and the `<video>` element's time and events. Never touches DRM, the stream or frames. |
-| Watched ranges | `src/core/watched-ranges.ts` | Pure, unit-tested. Records intervals you actually played through, measured in media time, so skipping ahead never unlocks the skipped part. One allowance: a forward hop of up to 10 s (the skip button) counts as watched if you'd played at least 5 s since the previous hop, so repeated tapping can't unlock a long stretch. |
+| Watched ranges | `src/core/watched-ranges.ts` | Pure, unit-tested. Records intervals you actually played through, measured in media time, so skipping ahead never unlocks the skipped part. One allowance: a forward hop of about 10 s (the skip button) counts as watched if you'd played at least 5 s since the previous hop, so repeated tapping can't unlock a long stretch. |
 | Controller | `src/content/controller.ts` | Wires the adapter to tracking, storage and the UI. Platform-agnostic. |
 | UI | `src/ui/` | Preact inside a Shadow DOM, mounted inside the player container so it survives fullscreen. Side panel, pop-ups or hidden (remembered). |
 | Spoiler filter | `src/core/spoiler-filter.ts` | Pure, unit-tested. A comment is shown only if its timestamp is inside a watched range (your own always). Replies also need their parent visible, so a later reply never leaks under an early comment. |
