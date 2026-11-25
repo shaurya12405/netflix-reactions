@@ -1,0 +1,12 @@
+node_modules/
+.output/
+.wxt/
+dist/
+*.zip
+.env
+.env.*
+!.env.example
+*.pem
+coverage/
+tests/e2e/.artifacts/
+.DS_Store
