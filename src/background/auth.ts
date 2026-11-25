@@ -29,6 +29,48 @@ export function getRedirectUrl(): string {
 
 const message = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
+/**
+ * Requests Supabase's authorize URL without following the redirect. A working
+ * setup answers with a redirect to Google; a broken one (provider disabled,
+ * wrong project URL) answers with an error we can show in plain words, which
+ * launchWebAuthFlow would only report as "page could not be loaded".
+ * Returns null when everything looks fine.
+ */
+async function preflightAuthorize(authorizeUrl: string): Promise<string | null> {
+  let res: Response;
+  try {
+    res = await fetch(authorizeUrl, { redirect: 'manual', credentials: 'omit', cache: 'no-store' });
+  } catch (e) {
+    return `Could not reach Supabase at ${new URL(authorizeUrl).origin} (${message(e)}). Check WXT_SUPABASE_URL in .env, then rebuild.`;
+  }
+  if (res.type === 'opaqueredirect' || (res.status >= 300 && res.status < 400) || res.ok) return null;
+  const body = await res.text().catch(() => '');
+  let detail = `HTTP ${res.status}`;
+  try {
+    const json = JSON.parse(body) as Record<string, unknown>;
+    const text = json.msg ?? json.error_description ?? json.message ?? json.error;
+    if (typeof text === 'string') detail = text;
+  } catch {
+    /* not JSON */
+  }
+  if (/provider is not enabled/i.test(detail)) {
+    return 'Google sign-in is not enabled in Supabase (Authentication → Sign In / Providers → Google). See docs/SETUP.md step 5.';
+  }
+  return `Supabase refused to start sign-in: ${detail}`;
+}
+
+/** Turns launchWebAuthFlow's terse errors into something actionable. */
+export function explainAuthFlowError(raw: string): string {
+  if (/did not approve|user cancel|closed/i.test(raw)) return 'Sign-in was cancelled.';
+  if (/could not be loaded/i.test(raw)) {
+    return (
+      'The Google sign-in page failed to load. Check docs/SETUP.md steps 4–6: the redirect URI in Google Cloud, ' +
+      'your account in Test users, and the extension redirect URL in Supabase (see "Sign-in setup info" below).'
+    );
+  }
+  return `Sign-in failed (${raw}).`;
+}
+
 export function createAuthService(client: AppSupabaseClient | null) {
   async function getState(): Promise<AuthState> {
     if (!client) return { status: 'unconfigured' };
@@ -61,12 +103,14 @@ export function createAuthService(client: AppSupabaseClient | null) {
     });
     if (error || !data.url) return { ok: false, error: error?.message ?? 'Could not start sign-in.' };
 
+    const setupProblem = await preflightAuthorize(data.url);
+    if (setupProblem) return { ok: false, error: setupProblem };
+
     let resultUrl: string | undefined;
     try {
       resultUrl = await browser.identity.launchWebAuthFlow({ url: data.url, interactive: true });
     } catch (e) {
-      // Closing the window or cancelling lands here.
-      return { ok: false, error: `Sign-in was cancelled or blocked (${message(e)}).` };
+      return { ok: false, error: explainAuthFlowError(message(e)) };
     }
     if (!resultUrl) return { ok: false, error: 'Sign-in returned no result.' };
 
