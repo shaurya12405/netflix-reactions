@@ -59,12 +59,14 @@ npx supabase@latest link --project-ref <project-ref>
 ```
 
 ```bash
-npx supabase@latest db push
+npx supabase@latest db push --remote
 ```
 
-`link` asks for the database password from step 1. `db push` applies every
-file in `supabase/migrations/` in order and records which ones ran, so later
-milestones only need `db push` again.
+`link` asks for the database password from step 1. `db push --remote` applies
+every file in `supabase/migrations/` to your online project, in order, and
+records which ones ran, so later milestones only need the same command again.
+(Without `--remote`, newer CLI versions target a local Docker copy of Supabase
+and fail with "connect ECONNREFUSED 127.0.0.1:54322".)
 
 **Option B: SQL editor.** In the dashboard open **SQL Editor**, then for each
 file in `supabase/migrations/`, oldest first, paste its contents and click
