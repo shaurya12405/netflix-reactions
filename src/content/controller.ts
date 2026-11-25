@@ -27,6 +27,7 @@ import { installKeyboardShield } from '../ui/event-shield';
 import { createShadowMount, type ShadowMount } from '../ui/mount';
 import * as state from '../ui/state';
 import { createCommentsSync } from './comments-sync';
+import { isContextInvalidatedError } from './context';
 
 /** How often unsaved progress is flushed to storage while playing. */
 const SAVE_INTERVAL_MS = 5000;
@@ -35,10 +36,26 @@ const TOAST_MS = 5000;
 const MAX_TOASTS = 3;
 
 const log = (...args: unknown[]): void => console.debug('[Scene Talk]', ...args);
-const warn = (...args: unknown[]): void => console.warn('[Scene Talk]', ...args);
 
-export function startController(win: Window, adapter: PlatformAdapter): () => void {
+export interface ControllerOptions {
+  /**
+   * Returns false once this content script has been cut off from the
+   * extension (reloaded/updated). Checking it also lets the host (WXT's
+   * content-script context) run its invalidation callbacks, i.e. our stop().
+   */
+  readonly isAlive?: () => boolean;
+}
+
+export function startController(win: Window, adapter: PlatformAdapter, options: ControllerOptions = {}): () => void {
   const doc = win.document;
+  const isAlive = options.isAlive ?? (() => true);
+  let stopped = false;
+
+  /** Logs a warning, except when the extension context is gone: then stay quiet. */
+  const warn = (...args: unknown[]): void => {
+    if (args.some(isContextInvalidatedError) || !isAlive()) return;
+    console.warn('[Scene Talk]', ...args);
+  };
   const config = getSupabaseConfig();
   const sync = createCommentsSync(config ? createCommentsApi(config) : null, warn);
 
@@ -127,6 +144,7 @@ export function startController(win: Window, adapter: PlatformAdapter): () => vo
 
   const attachVideo = (video: HTMLVideoElement): (() => void) => {
     const onTick = (): void => {
+      if (stopped || !isAlive()) return;
       apply(sampleVideo(video));
       state.currentTime.value = video.currentTime;
       state.paused.value = video.paused;
@@ -288,7 +306,11 @@ export function startController(win: Window, adapter: PlatformAdapter): () => vo
   doc.addEventListener('fullscreenchange', onFullscreenChange);
 
   const stopAdapter = adapter.observe(onSession);
-  const saveTimer = setInterval(flush, SAVE_INTERVAL_MS);
+  const saveTimer = setInterval(() => {
+    // Also the heartbeat that notices a reloaded extension (isAlive() then
+    // triggers the shutdown) even while the video is paused.
+    if (isAlive()) flush();
+  }, SAVE_INTERVAL_MS);
   const onHidden = (): void => {
     if (doc.visibilityState === 'hidden') flush();
     else void refreshAuth();
@@ -297,7 +319,9 @@ export function startController(win: Window, adapter: PlatformAdapter): () => vo
   win.addEventListener('pagehide', flush);
 
   return () => {
-    flush();
+    if (stopped) return;
+    stopped = true;
+    if (isAlive()) flush();
     stopAdapter();
     sync.dispose();
     clearInterval(saveTimer);

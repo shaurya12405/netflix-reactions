@@ -283,6 +283,21 @@ try {
     assert.match(await popup.locator('main').textContent(), /tester/);
     await popup.close();
   });
+
+  // Must stay last: it reloads the extension, orphaning this tab's content script.
+  await step('after an extension reload the old copy removes its panel and logs nothing', async () => {
+    const warnings = [];
+    page.on('console', (m) => {
+      if (/Scene Talk|invalidated/i.test(m.text()) && ['warning', 'error'].includes(m.type())) warnings.push(m.text());
+    });
+    page.on('pageerror', (e) => warnings.push(String(e)));
+    await page.evaluate(() => document.querySelector('video').play());
+    await worker.evaluate(() => chrome.runtime.reload());
+    // The orphaned script notices on its next tick or 5 s heartbeat.
+    await page.waitForFunction(() => document.querySelectorAll('scene-talk-root').length === 0, null, { timeout: 12000 });
+    await page.waitForTimeout(6000); // let a save interval pass
+    assert.deepEqual(warnings, []);
+  });
 } finally {
   console.log(results.join('\n'));
   await context.close();
